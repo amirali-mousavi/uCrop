@@ -3,6 +3,7 @@ package com.yalantis.ucrop.view;
 import android.content.Context;
 import android.content.res.TypedArray;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
@@ -65,6 +66,7 @@ public class OverlayView extends View {
     private int mFreestyleCropMode = DEFAULT_FREESTYLE_CROP_MODE;
     private float mPreviousTouchX = -1, mPreviousTouchY = -1;
     private int mCurrentTouchCornerIndex = -1;
+    private int mCurrentTouchSideIndex = -1;
     private int mTouchPointThreshold;
     private int mCropRectMinSize;
     private int mCropRectCornerTouchAreaLineLength;
@@ -214,6 +216,13 @@ public class OverlayView extends View {
     }
 
     /**
+     * Setter for crop grid corner color
+     */
+    public void setCropGridCornerColor(@ColorInt int color) {
+        mCropFrameCornersPaint.setColor(color);
+    }
+
+    /**
      * This method sets aspect ratio for crop bounds.
      *
      * @param targetAspectRatio - aspect ratio for image crop (e.g. 1.77(7) for 16:9)
@@ -307,7 +316,8 @@ public class OverlayView extends View {
 
         if ((event.getAction() & MotionEvent.ACTION_MASK) == MotionEvent.ACTION_DOWN) {
             mCurrentTouchCornerIndex = getCurrentTouchIndex(x, y);
-            boolean shouldHandle = mCurrentTouchCornerIndex != -1;
+            mCurrentTouchSideIndex = getSelectedSide(x, y);
+            boolean shouldHandle = mCurrentTouchCornerIndex != -1 || mCurrentTouchSideIndex != -1;
             if (!shouldHandle) {
                 mPreviousTouchX = -1;
                 mPreviousTouchY = -1;
@@ -319,6 +329,17 @@ public class OverlayView extends View {
         }
 
         if ((event.getAction() & MotionEvent.ACTION_MASK) == MotionEvent.ACTION_MOVE) {
+            if (event.getPointerCount() == 1 && mCurrentTouchSideIndex != -1) {
+
+                x = Math.min(Math.max(x, getPaddingLeft()), getWidth() - getPaddingRight());
+                y = Math.min(Math.max(y, getPaddingTop()), getHeight() - getPaddingBottom());
+                updateCropViewRect(x, y);
+
+                mPreviousTouchX = x;
+                mPreviousTouchY = y;
+
+                return true;
+            }
             if (event.getPointerCount() == 1 && mCurrentTouchCornerIndex != -1) {
 
                 x = Math.min(Math.max(x, getPaddingLeft()), getWidth() - getPaddingRight());
@@ -337,6 +358,7 @@ public class OverlayView extends View {
             mPreviousTouchX = -1;
             mPreviousTouchY = -1;
             mCurrentTouchCornerIndex = -1;
+            mCurrentTouchSideIndex = -1;
 
             if (mCallback != null) {
                 mCallback.onCropRectUpdated(mCropViewRect);
@@ -356,6 +378,22 @@ public class OverlayView extends View {
      */
     private void updateCropViewRect(float touchX, float touchY) {
         mTempRect.set(mCropViewRect);
+
+        switch (mCurrentTouchSideIndex) {
+            case 1:
+                mTempRect.set(touchX, mCropViewRect.top, mCropViewRect.right, mCropViewRect.bottom);
+                break;
+            case 2:
+                mTempRect.set(mCropViewRect.left, mCropViewRect.top, touchX, mCropViewRect.bottom);
+                break;
+            case 3:
+                mTempRect.set(mCropViewRect.left, touchY, mCropViewRect.right, mCropViewRect.bottom);
+                break;
+            case 4:
+                mTempRect.set(mCropViewRect.left, mCropViewRect.top, mCropViewRect.right, touchY);
+                break;
+
+        }
 
         switch (mCurrentTouchCornerIndex) {
             // resize rectangle
@@ -419,7 +457,8 @@ public class OverlayView extends View {
             }
         }
 
-        if (mFreestyleCropMode == FREESTYLE_CROP_MODE_ENABLE && closestPointIndex < 0 && mCropViewRect.contains(touchX, touchY)) {
+        RectF rect = new RectF(mCropViewRect.left + 20, mCropViewRect.top + 20, mCropViewRect.right - 20, mCropViewRect.bottom - 20);
+        if (mFreestyleCropMode == FREESTYLE_CROP_MODE_ENABLE && closestPointIndex < 0 && rect.contains(touchX, touchY)) {
             return 4;
         }
 
@@ -439,6 +478,23 @@ public class OverlayView extends View {
 //            }
 //        }
         return closestPointIndex;
+    }
+
+    private int getSelectedSide(float x, float y) {
+        if ((x > mCropViewRect.left - 20) && (x < mCropViewRect.left + 20) && (y > mCropViewRect.top + 20) && (y < mCropViewRect.bottom - 20)) {
+            return 1;
+        }
+        if ((x > mCropViewRect.right - 20) && (x < mCropViewRect.right + 20) && (y > mCropViewRect.top + 20) && (y < mCropViewRect.bottom - 20)) {
+            return 2;
+        }
+        if ((y > mCropViewRect.top - 20) && (y < mCropViewRect.top + 20) && (x > mCropViewRect.left + 20) && (x < mCropViewRect.right - 20)) {
+            return 3;
+        }
+        if ((y > mCropViewRect.bottom - 20) && (y < mCropViewRect.bottom + 20) && (x > mCropViewRect.left + 20) && (x < mCropViewRect.right - 20)) {
+            return 4;
+        }
+
+        return -1;
     }
 
     /**
@@ -502,6 +558,39 @@ public class OverlayView extends View {
         if (mFreestyleCropMode != FREESTYLE_CROP_MODE_DISABLE) {
             canvas.save();
 
+            canvas.drawRect(
+                    mCropViewRect.left - 1,
+                    mCropViewRect.top + ((mCropViewRect.bottom - mCropViewRect.top) / 2) - 20,
+                    mCropViewRect.left + 1,
+                    mCropViewRect.top + ((mCropViewRect.bottom - mCropViewRect.top) / 2) + 20,
+                    mCropFrameCornersPaint
+            );
+
+            canvas.drawRect(
+                    mCropViewRect.right - 1,
+                    mCropViewRect.top + ((mCropViewRect.bottom - mCropViewRect.top) / 2) - 20,
+                    mCropViewRect.right + 1,
+                    mCropViewRect.top + ((mCropViewRect.bottom - mCropViewRect.top) / 2) + 20,
+                    mCropFrameCornersPaint
+            );
+
+            canvas.drawRect(
+                    mCropViewRect.left + ((mCropViewRect.right - mCropViewRect.left) / 2) - 20,
+                    mCropViewRect.top - 1,
+                    mCropViewRect.left + ((mCropViewRect.right - mCropViewRect.left) / 2) + 20,
+                    mCropViewRect.top + 1,
+                    mCropFrameCornersPaint
+            );
+
+            canvas.drawRect(
+                    mCropViewRect.left + ((mCropViewRect.right - mCropViewRect.left) / 2) - 20,
+                    mCropViewRect.bottom - 1,
+                    mCropViewRect.left + ((mCropViewRect.right - mCropViewRect.left) / 2) + 20,
+                    mCropViewRect.bottom + 1,
+                    mCropFrameCornersPaint
+            );
+
+            mCropFrameCornersPaint.setColor(Color.WHITE);
             mTempRect.set(mCropViewRect);
             mTempRect.inset(mCropRectCornerTouchAreaLineLength, -mCropRectCornerTouchAreaLineLength);
             canvas.clipRect(mTempRect, Region.Op.DIFFERENCE);
@@ -545,6 +634,7 @@ public class OverlayView extends View {
                 getResources().getDimensionPixelSize(R.dimen.ucrop_default_crop_frame_stoke_width));
         int cropFrameColor = a.getColor(R.styleable.ucrop_UCropView_ucrop_frame_color,
                 getResources().getColor(R.color.ucrop_color_default_crop_frame));
+
         mCropFramePaint.setStrokeWidth(cropFrameStrokeSize);
         mCropFramePaint.setColor(cropFrameColor);
         mCropFramePaint.setStyle(Paint.Style.STROKE);
